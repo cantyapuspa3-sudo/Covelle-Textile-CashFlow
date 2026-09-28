@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#d94675">
+  <title>CashFlow | Petty Cash & Kas Operasional</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css?v=16">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand"><span class="brand-mark">C</span><span><strong>CashFlow</strong><small>PT Covelle Textile</small></span></div>
+      <button class="sidebar-close" id="sidebarClose" type="button" title="Tutup menu" aria-label="Tutup menu">✕</button>
+      <nav class="nav" aria-label="Navigasi utama">
+        <button class="nav-item active" data-view="dashboard"><span class="nav-icon">⌂</span>Dashboard</button>
+        <section class="nav-group">
+          <button class="nav-group-toggle" type="button" aria-expanded="false"><span class="nav-caret">▸</span>MASTER DATA</button>
+          <div class="nav-submenu">
+            <button class="nav-item" data-view="coa">Master Akun / COA</button>
+            <button class="nav-item" data-view="departments">Master Departemen</button>
+            <button class="nav-item" data-view="categories">Master Kategori</button>
+            <button class="nav-item" data-view="cash-accounts">Master Kas / Brankas</button>
+            <button class="nav-item" data-view="users">Master User & Role</button>
+          </div>
+        </section>
+        <section class="nav-group">
+          <button class="nav-group-toggle" type="button" aria-expanded="false"><span class="nav-caret">▸</span>PETTY CASH</button>
+          <div class="nav-submenu">
+            <button class="nav-item" data-view="petty-balance">Saldo & Threshold Alert</button>
+            <button class="nav-item" data-view="petty-topup">Pembentukan / Top-Up Dana</button>
+            <button class="nav-item" data-view="petty-expenses">Pengeluaran (Voucher)</button>
+            <button class="nav-item" data-view="petty-replenishment">Replenishment</button>
+            <button class="nav-item" data-view="cash-count">Cash Count & Berita Acara</button>
+          </div>
+        </section>
+        <section class="nav-group">
+          <button class="nav-group-toggle" type="button" aria-expanded="false"><span class="nav-caret">▸</span>KAS OPERASIONAL</button>
+          <div class="nav-submenu">
+            <button class="nav-item" data-view="cash-in">Kas Masuk</button>
+            <button class="nav-item" data-view="cash-out">Kas Keluar</button>
+            <button class="nav-item" data-view="cash-transfer">Transfer Kas / Bank-to-Cash</button>
+          </div>
+        </section>
+        <section class="nav-group">
+          <button class="nav-group-toggle" type="button" aria-expanded="false"><span class="nav-caret">▸</span>TRANSAKSI</button>
+          <div class="nav-submenu">
+            <button class="nav-item" data-view="cash-request">Cash Request</button>
+          </div>
+        </section>
+        <section class="nav-group">
+          <button class="nav-group-toggle" type="button" aria-expanded="false"><span class="nav-caret">▸</span>APPROVAL</button>
+          <div class="nav-submenu">
+            <button class="nav-item" data-view="approval">Pending Approval</button>
+            <button class="nav-item" data-view="approval-approved">Approved</button>
+            <button class="nav-item" data-view="approval-rejected">Rejected</button>
+          </div>
+        </section>
+        <section class="nav-group">
+          <button class="nav-group-toggle" type="button" aria-expanded="false"><span class="nav-caret">▸</span>AKUNTANSI</button>
+          <div class="nav-submenu">
+            <button class="nav-item" data-view="accounting-journal">Jurnal Umum</button>
+            <button class="nav-item" data-view="cash-book">Buku Kas</button>
+          </div>
+        </section>
+        <section class="nav-group">
+          <button class="nav-group-toggle" type="button" aria-expanded="false"><span class="nav-caret">▸</span>LAPORAN</button>
+          <div class="nav-submenu">
+            <button class="nav-item" data-view="report-petty-cash">Laporan Petty Cash</button>
+            <button class="nav-item" data-view="report-operational-cash">Laporan Kas Operasional</button>
+            <button class="nav-item" data-view="report-department">Pengeluaran per Departemen</button>
+            <button class="nav-item" data-view="report-category">Pengeluaran per Kategori</button>
+            <button class="nav-item" data-view="report-cash-count">Cash Count & Selisih Kas</button>
+          </div>
+        </section>
+        <section class="nav-group">
+          <button class="nav-group-toggle" type="button" aria-expanded="false"><span class="nav-caret">▸</span>SETTING</button>
+          <div class="nav-submenu">
+            <button class="nav-item" data-view="users">User & Role</button>
+            <button class="nav-item" data-view="settings-approval">Approval Matrix & Threshold Limit</button>
+            <button class="nav-item" data-view="settings-imprest">Setting Limit Kas (Imprest System)</button>
+          </div>
+        </section>
+      </nav>
+      <div class="sidebar-footer"><span class="status-dot" id="supabaseStatusDot"></span><span id="supabaseStatus">Memeriksa koneksi Supabase...</span></div>
+    </aside>
+
+    <main class="main-content">
+      <header class="topbar">
+        <button class="menu-toggle" id="menuToggle" aria-label="Buka menu">☰</button>
+        <div><span class="eyebrow">OPERATIONS CONTROL</span><h1 id="pageTitle">Dashboard</h1></div>
+        <div class="topbar-actions"><div class="notification-wrap"><button class="icon-button notification-trigger" id="notificationToggle" type="button" title="Notifikasi" aria-label="Buka notifikasi" aria-controls="notificationMenu" aria-expanded="false">🔔<span class="notification-dot" id="notificationCount" hidden></span></button><div class="notification-menu" id="notificationMenu" hidden></div></div><div class="user-chip"><span class="avatar" data-fallback="CP"><img src="fotocantya.jpg" alt="" aria-hidden="true"></span><span><strong>Cantya Puspa</strong><small>Finance</small></span></div></div>
+      </header>
+      <div id="toast" class="toast" role="status"></div>
+      <div id="appView" class="page-view"></div>
+    </main>
+  </div>
+  <div class="modal-backdrop" id="modalBackdrop" hidden><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle"><div class="modal-header"><h2 id="modalTitle">Tambah Data</h2><button class="modal-close" id="modalClose" aria-label="Tutup">×</button></div><form id="masterForm"></form></section></div>
+  <script type="module" src="js/app.js?v=19"></script>
+</body>
+</html>
