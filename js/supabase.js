@@ -17,8 +17,25 @@ export async function supabaseRequest(table) {
 	return data;
 }
 
+export async function loadApplicationState() {
+	const { data, error } = await getSupabaseClient()
+		.from('application_state')
+		.select('state')
+		.eq('id', 'cashflow')
+		.maybeSingle();
+	if (error) throw new Error(`Gagal membaca state aplikasi: ${error.message}`);
+	return data?.state ?? null;
+}
+
+export async function saveApplicationState(state) {
+	const { error } = await getSupabaseClient()
+		.from('application_state')
+		.upsert({ id: 'cashflow', state, updated_at: new Date().toISOString() }, { onConflict: 'id' });
+	if (error) throw new Error(`Gagal menyinkronkan state aplikasi: ${error.message}`);
+}
+
 export async function testSupabaseConnection() {
-	const { data, error } = await getSupabaseClient().from('cash_accounts').select('id').limit(1);
+	const { data, error } = await getSupabaseClient().from('cash_accounts').select('id');
 	if (error) throw new Error(`Gagal membaca tabel cash_accounts: ${error.message}`);
 	return { rowCount: data.length };
 }

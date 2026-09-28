@@ -1,4 +1,27 @@
+import { loadApplicationState, saveApplicationState } from './supabase.js';
+
 export const STORAGE_KEY = 'kasflow-state-v1';
+const SYNC_EVENT = 'cashflow:supabase-sync';
+let cloudSyncReady = false;
+let saveTimer;
+let saveQueue = Promise.resolve();
+
+function notifySync(status, message) {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(SYNC_EVENT, { detail: { status, message } }));
+  }
+}
+
+const illustrationTransactions = Array.from({ length: 7 }, (_, dayIndex) => {
+  const day = dayIndex + 22;
+  const date = `2026-09-${String(day).padStart(2, '0')}`;
+  const referenceDate = date.replaceAll('-', '');
+  const variation = [0, 50000, 100000, 150000, 100000, 50000, 0][dayIndex];
+  return [
+    { id: `DEMO-IN-${referenceDate}`, type: 'cash-in', date, cashAccountId: 'CASH-003', category: 'Penerimaan Operasional', amount: 1200000 + variation, description: `Ilustrasi kas masuk harian ${day} September`, status: 'Posted' },
+    { id: `DEMO-OUT-${referenceDate}`, type: 'cash-out', date, cashAccountId: 'CASH-002', department: 'Produksi', category: 'Operasional Pabrik', amount: 850000 + variation, description: `Ilustrasi kas keluar harian ${day} September`, status: 'Posted' }
+  ];
+}).flat();
 
 const initialState = {
   currentUser: { id: 'USR-001', name: 'Cantya Puspa', role: 'Admin' },
@@ -63,6 +86,7 @@ const initialState = {
     { id: 'COUT-260925', type: 'cash-out', date: '2026-09-25', cashAccountId: 'CASH-003', department: 'Warehouse', category: 'Bahan Baku', amount: 12400000, description: 'Pelunasan pembelian benang untuk jadwal produksi', status: 'Approved', requester: 'Agus Setiawan' },
     { id: 'PCV-260926', type: 'petty-expense', date: '2026-09-26', cashAccountId: 'CASH-001', department: 'Produksi', category: 'Sparepart', amount: 735000, description: 'Penggantian nozzle mesin pewarnaan', status: 'Pending', requester: 'Rina Pratiwi' },
     { id: 'REQ-260927', type: 'cash-request', date: '2026-09-27', department: 'Quality Control', category: 'Utility', amount: 1850000, description: 'Kalibrasi alat ukur ketebalan kain', status: 'Pending', requester: 'Maya Lestari' },
+    ...illustrationTransactions,
   ],
   settings: { pettyFund: 5000000, minimumBalance: 1500000, maximumBalance: 5000000, approvalMatrix: [{ max: 500000, role: 'Supervisor' }, { max: 5000000, role: 'Manager' }, { max: null, role: 'Finance Manager' }] }
 };
@@ -92,5 +116,43 @@ export function loadState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   return state;
 }
-export function saveState(state) { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+
+export async function initializeSupabaseState(state) {
+  notifySync('syncing', 'Menyinkronkan seluruh data ke Supabase...');
+  const remoteState = await loadApplicationState();
+
+  if (remoteState) {
+    for (const key of Object.keys(state)) {
+      if (!(key in remoteState)) delete state[key];
+    }
+    Object.assign(state, remoteState);
+    state.transactions ||= [];
+
+    const illustrationTransactions = initialState.transactions.filter((transaction) => transaction.id.startsWith('DEMO-'));
+    const transactionIds = new Set(state.transactions.map((transaction) => transaction.id));
+    const missingIllustrations = illustrationTransactions.filter((transaction) => !transactionIds.has(transaction.id));
+    state.transactions.push(...missingIllustrations);
+    if (missingIllustrations.length) await saveApplicationState(state);
+  } else {
+    await saveApplicationState(state);
+  }
+
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  cloudSyncReady = true;
+  notifySync('synced', 'Seluruh data tersinkron ke Supabase');
+}
+
+export function saveState(state) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  if (!cloudSyncReady) return;
+
+  clearTimeout(saveTimer);
+  const snapshot = structuredClone(state);
+  saveTimer = setTimeout(() => {
+    notifySync('syncing', 'Menyinkronkan perubahan ke Supabase...');
+    saveQueue = saveQueue.catch(() => {}).then(() => saveApplicationState(snapshot))
+      .then(() => notifySync('synced', 'Seluruh data tersinkron ke Supabase'))
+      .catch((error) => notifySync('error', error.message));
+  }, 400);
+}
 export function createId(prefix) { return `${prefix}-${Date.now().toString(36).toUpperCase()}`; }

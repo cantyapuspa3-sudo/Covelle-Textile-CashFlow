@@ -36,7 +36,9 @@ export function renderDashboard(state, navigate) {
   const balanceTrend = state.cashAccounts.map((account) => ({ name: account.name, balance: totalCash({ ...state, cashAccounts: [account] }) }));
   const todayLabel = now.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).toUpperCase();
   const monthLabel = now.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' });
-  return `<section class="welcome"><div><span class="eyebrow" data-current-date>${todayLabel}</span><h2>Selamat datang, ${escapeHtml(state.currentUser.name)}</h2><p>Ringkasan kendali kas operasional pabrik hari ini.</p></div><div class="date-pill">● LocalStorage aktif</div></section>
+  const syncStatus = document.body.dataset.supabaseSyncStatus || 'syncing';
+  const syncLabel = syncStatus === 'synced' ? '● Supabase tersinkron' : syncStatus === 'error' ? '● Cache lokal aktif' : '● Menyinkronkan Supabase...';
+  return `<section class="welcome"><div><span class="eyebrow" data-current-date>${todayLabel}</span><h2>Selamat datang, ${escapeHtml(state.currentUser.name)}</h2><p>Ringkasan kendali kas operasional pabrik hari ini.</p></div><div class="date-pill" data-sync-indicator>${syncLabel}</div></section>
   <section class="metrics">
     <article class="metric-card"><span class="label">Total Saldo Petty Cash</span><div class="value">${formatCurrency(pettyBalance)}</div><div class="trend">${pettyBalance <= petty.minimumBalance ? 'Perlu replenishment' : 'Dalam batas aman'}</div></article>
     <article class="metric-card"><span class="label">Saldo Kas Operasional</span><div class="value">${formatCurrency(totalCash(state, 'Cash'))}</div><div class="trend">Saldo terhitung dinamis</div></article>

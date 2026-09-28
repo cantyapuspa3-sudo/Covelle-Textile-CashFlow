@@ -1,4 +1,4 @@
-import { createId, loadState, saveState } from './data.js';
+import { createId, initializeSupabaseState, loadState, saveState } from './data.js';
 import { escapeHtml, localDateValue, statusBadge } from './utils.js';
 import { renderDashboard } from './dashboard.js';
 import { bindTransaction, renderTransaction } from './transactions.js';
@@ -25,6 +25,18 @@ const reportViews = ['reports', 'report-petty-cash', 'report-operational-cash', 
 const placeholderViews = ['settings-approval', 'settings-imprest'];
 
 function showToast(message) { const toast = document.querySelector('#toast'); toast.textContent = message; toast.classList.add('show'); setTimeout(() => toast.classList.remove('show'), 2600); }
+function updateSupabaseStatus(syncStatus, message) {
+  const status = document.querySelector('#supabaseStatus');
+  const statusDot = document.querySelector('#supabaseStatusDot');
+  document.body.dataset.supabaseSyncStatus = syncStatus;
+  const missingStateTable = syncStatus === 'error' && /application_state/i.test(message) && /(schema cache|not found|does not exist)/i.test(message);
+  status.textContent = syncStatus === 'synced' ? 'Supabase aktif · semua data tersinkron' : missingStateTable ? 'Jalankan SQL setup Supabase' : syncStatus === 'error' ? 'Sync gagal · data lokal aman' : message;
+  status.title = syncStatus === 'error' ? message : status.textContent;
+  statusDot.style.backgroundColor = syncStatus === 'synced' ? '#46c596' : syncStatus === 'error' ? '#e66c6c' : '#e5b54f';
+  const dashboardStatus = document.querySelector('[data-sync-indicator]');
+  if (dashboardStatus) dashboardStatus.textContent = syncStatus === 'synced' ? '● Supabase tersinkron' : syncStatus === 'error' ? '● Cache lokal aktif' : '● Menyinkronkan Supabase...';
+}
+window.addEventListener('cashflow:supabase-sync', (event) => updateSupabaseStatus(event.detail.status, event.detail.message));
 function renderMaster(view) { const item = masterConfig[view]; const rows = state[item.key] || []; return `<div class="section-head"><div><span class="eyebrow">MASTER DATA</span><h2>${item.title}</h2></div><button class="button-primary" data-add="${view}">＋ ${item.add}</button></div><div class="panel"><div class="panel-header"><p>${rows.length} data terdaftar dan tersimpan di LocalStorage</p><input class="search-box" data-search="${view}" placeholder="Cari data..."></div><div class="table-wrap"><table class="data-table"><thead><tr>${item.columns.map(([, label]) => `<th>${label}</th>`).join('')}<th>Aksi</th></tr></thead><tbody>${rows.map((row) => `<tr>${item.columns.map(([key]) => `<td>${key === 'status' ? statusBadge(row[key]) : escapeHtml(row[key] ?? '-')}</td>`).join('')}<td><button class="button-secondary" data-edit="${view}" data-id="${row.id}">Edit</button></td></tr>`).join('')}</tbody></table></div></div>`; }
 function bindMasterSearch() { appView.querySelectorAll('[data-search]').forEach((input) => input.addEventListener('input', () => { const query = input.value.trim().toLowerCase(); appView.querySelectorAll('.data-table tbody tr').forEach((row) => { row.hidden = query && !row.textContent.toLowerCase().includes(query); }); })); }
 function renderPlaceholder(view) { const labels = { 'approval-approved': ['Approved', 'Transaksi yang sudah disetujui akan ditampilkan pada modul Approval.'], 'approval-rejected': ['Rejected', 'Transaksi yang ditolak akan ditampilkan pada modul Approval.'], 'settings-approval': ['Approval Matrix & Threshold Limit', 'Pengaturan approval tersedia pada tahap konfigurasi berikutnya.'], 'settings-imprest': ['Setting Limit Kas', 'Pengaturan imprest system tersedia pada tahap konfigurasi berikutnya.'] }; const [title, description] = labels[view] || ['Modul', 'Modul sedang disiapkan.']; return `<div class="welcome"><div><span class="eyebrow">SYSTEM CONTROL</span><h2>${title}</h2><p>${description}</p></div></div><div class="panel empty-state"><div class="list-icon" style="margin:0 auto 15px">◌</div><strong>Modul belum aktif</strong><p>Struktur menu tetap tersedia untuk konfigurasi berikutnya.</p></div>`; }
@@ -38,6 +50,11 @@ document.querySelector('#sidebarClose').onclick = () => document.querySelector('
 document.querySelector('#modalClose').onclick = () => { document.querySelector('#modalBackdrop').hidden = true; };
 document.querySelector('#modalBackdrop').addEventListener('click', (event) => { if (event.target.id === 'modalBackdrop') event.currentTarget.hidden = true; });
 render();
+updateSupabaseStatus('syncing', 'Menyinkronkan semua data...');
+initializeSupabaseState(state).then(() => {
+  render();
+  updateSupabaseStatus('synced', 'Seluruh data tersinkron ke Supabase');
+}).catch((error) => updateSupabaseStatus('error', error.message));
 let renderedDate = localDateValue();
 setInterval(() => {
   const currentDate = localDateValue();
