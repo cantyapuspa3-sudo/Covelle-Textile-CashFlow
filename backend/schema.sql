@@ -40,7 +40,7 @@ create table if not exists public.departments (
 
 create table if not exists public.profiles (
     id varchar(50) primary key,
-    role_id varchar(50),
+    role_id uuid,
     department_id varchar(50),
     employee_code varchar(50),
     full_name varchar(150) not null,
@@ -57,6 +57,23 @@ create table if not exists public.profiles (
         foreign key (department_id)
         references public.departments(id)
 );
+
+-- Migrate profiles created with the previous varchar role_id definition.
+-- Known ROLE-* seed IDs map to the stable UUIDs inserted below. Existing UUIDs
+-- are preserved; unknown values fail instead of silently losing their role.
+alter table public.profiles drop constraint if exists fk_profiles_role;
+alter table public.profiles
+    alter column role_id type uuid
+    using case
+        when role_id is null or btrim(role_id::text) = '' then null
+        when btrim(role_id::text) = 'ROLE-FIN' then '00000000-0000-4000-8000-000000000001'::uuid
+        when btrim(role_id::text) = 'ROLE-SUP' then '00000000-0000-4000-8000-000000000002'::uuid
+        when btrim(role_id::text) = 'ROLE-MGR' then '00000000-0000-4000-8000-000000000003'::uuid
+        when btrim(role_id::text) = 'ROLE-ACC' then '00000000-0000-4000-8000-000000000004'::uuid
+        when btrim(role_id::text) = 'ROLE-CASH' then '00000000-0000-4000-8000-000000000005'::uuid
+        when btrim(role_id::text) = 'ROLE-FM' then '00000000-0000-4000-8000-000000000006'::uuid
+        else btrim(role_id::text)::uuid
+    end;
 
 
 -- =========================================================
@@ -453,13 +470,19 @@ on public.journal_entries(source_transaction);
 insert into public.roles
     (id, name, description)
 values
-    ('ROLE-FIN', 'Finance', 'Finance'),
-    ('ROLE-SUP', 'Supervisor', 'Supervisor'),
-    ('ROLE-MGR', 'Manager', 'Manager'),
-    ('ROLE-ACC', 'Accounting', 'Accounting'),
-    ('ROLE-CASH', 'Cashier', 'Cashier'),
-    ('ROLE-FM', 'Finance Manager', 'Finance Manager')
+    ('00000000-0000-4000-8000-000000000001', 'Finance', 'Finance'),
+    ('00000000-0000-4000-8000-000000000002', 'Supervisor', 'Supervisor'),
+    ('00000000-0000-4000-8000-000000000003', 'Manager', 'Manager'),
+    ('00000000-0000-4000-8000-000000000004', 'Accounting', 'Accounting'),
+    ('00000000-0000-4000-8000-000000000005', 'Cashier', 'Cashier'),
+    ('00000000-0000-4000-8000-000000000006', 'Finance Manager', 'Finance Manager')
 on conflict (id) do nothing;
+
+alter table public.profiles drop constraint if exists fk_profiles_role;
+alter table public.profiles
+    add constraint fk_profiles_role
+    foreign key (role_id)
+    references public.roles(id);
 
 
 -- =========================================================
@@ -588,7 +611,7 @@ insert into public.profiles
 values
     (
         'USR-001',
-        'ROLE-FIN',
+        '00000000-0000-4000-8000-000000000001',
         'DEP-006',
         'finance.admin@kasflow.local',
         'Cantya Puspa',
@@ -596,7 +619,7 @@ values
     ),
     (
         'USR-002',
-        'ROLE-SUP',
+        '00000000-0000-4000-8000-000000000002',
         'DEP-002',
         'dimas@kasflow.local',
         'Dimas Saputra',
@@ -604,7 +627,7 @@ values
     ),
     (
         'USR-003',
-        'ROLE-ACC',
+        '00000000-0000-4000-8000-000000000004',
         'DEP-007',
         'budi@kasflow.local',
         'Budi Hartono',
@@ -612,7 +635,7 @@ values
     ),
     (
         'USR-004',
-        'ROLE-CASH',
+        '00000000-0000-4000-8000-000000000005',
         'DEP-006',
         'cashier@kasflow.local',
         'Cashier Pabrik',
@@ -627,10 +650,19 @@ on conflict (id) do nothing;
 
 insert into public.approval_matrix
     (minimum_amount, maximum_amount, role_name)
-values
-    (0, 500000, 'Supervisor'),
-    (500001, 5000000, 'Manager'),
-    (5000001, null, 'Finance Manager');
+select seed.minimum_amount, seed.maximum_amount, seed.role_name
+from (values
+    (0::numeric, 500000::numeric, 'Supervisor'::varchar),
+    (500001::numeric, 5000000::numeric, 'Manager'::varchar),
+    (5000001::numeric, null::numeric, 'Finance Manager'::varchar)
+) as seed(minimum_amount, maximum_amount, role_name)
+where not exists (
+    select 1
+    from public.approval_matrix existing
+    where existing.minimum_amount is not distinct from seed.minimum_amount
+      and existing.maximum_amount is not distinct from seed.maximum_amount
+      and existing.role_name = seed.role_name
+);
 
 
 -- =========================================================
@@ -644,13 +676,8 @@ insert into public.imprest_settings
         maximum_balance,
         replenishment_threshold
     )
-values
-    (
-        5000000,
-        1500000,
-        5000000,
-        1500000
-    );
+select 5000000, 1500000, 5000000, 1500000
+where not exists (select 1 from public.imprest_settings);
 
 
 -- =========================================================
@@ -678,94 +705,196 @@ alter table public.imprest_settings enable row level security;
 -- Nanti sebaiknya diperketat menggunakan auth.uid().
 -- =========================================================
 
+drop policy if exists "dev read roles" on public.roles;
 create policy "dev read roles"
 on public.roles for select
 to anon, authenticated
 using (true);
 
+drop policy if exists "dev read departments" on public.departments;
 create policy "dev read departments"
 on public.departments for select
 to anon, authenticated
 using (true);
 
+drop policy if exists "dev read profiles" on public.profiles;
 create policy "dev read profiles"
 on public.profiles for select
 to anon, authenticated
 using (true);
 
+drop policy if exists "dev read coa" on public.chart_of_accounts;
 create policy "dev read coa"
 on public.chart_of_accounts for select
 to anon, authenticated
 using (true);
 
+drop policy if exists "dev read categories" on public.categories;
 create policy "dev read categories"
 on public.categories for select
 to anon, authenticated
 using (true);
 
+drop policy if exists "dev read cash accounts" on public.cash_accounts;
 create policy "dev read cash accounts"
 on public.cash_accounts for select
 to anon, authenticated
 using (true);
 
+drop policy if exists "dev read transactions" on public.transactions;
 create policy "dev read transactions"
 on public.transactions for select
 to anon, authenticated
 using (true);
 
+drop policy if exists "dev insert transactions" on public.transactions;
 create policy "dev insert transactions"
 on public.transactions for insert
 to anon, authenticated
 with check (true);
 
+drop policy if exists "dev update transactions" on public.transactions;
 create policy "dev update transactions"
 on public.transactions for update
 to anon, authenticated
 using (true)
 with check (true);
 
+drop policy if exists "dev read approvals" on public.approvals;
 create policy "dev read approvals"
 on public.approvals for select
 to anon, authenticated
 using (true);
 
+drop policy if exists "dev insert approvals" on public.approvals;
 create policy "dev insert approvals"
 on public.approvals for insert
 to anon, authenticated
 with check (true);
 
+drop policy if exists "dev update approvals" on public.approvals;
 create policy "dev update approvals"
 on public.approvals for update
 to anon, authenticated
 using (true)
 with check (true);
 
+drop policy if exists "dev read cash counts" on public.cash_counts;
 create policy "dev read cash counts"
 on public.cash_counts for select
 to anon, authenticated
 using (true);
 
+drop policy if exists "dev insert cash counts" on public.cash_counts;
 create policy "dev insert cash counts"
 on public.cash_counts for insert
 to anon, authenticated
 with check (true);
 
+drop policy if exists "dev read journals" on public.journal_entries;
 create policy "dev read journals"
 on public.journal_entries for select
 to anon, authenticated
 using (true);
 
+drop policy if exists "dev read journal lines" on public.journal_lines;
 create policy "dev read journal lines"
 on public.journal_lines for select
 to anon, authenticated
 using (true);
 
+drop policy if exists "dev read approval matrix" on public.approval_matrix;
 create policy "dev read approval matrix"
 on public.approval_matrix for select
 to anon, authenticated
 using (true);
 
+drop policy if exists "dev read imprest settings" on public.imprest_settings;
 create policy "dev read imprest settings"
 on public.imprest_settings for select
 to anon, authenticated
 using (true);
+
+
+-- =========================================================
+-- APPLICATION STATE
+-- Stores the complete CashFlow UI state used by backend/app.js.
+-- These anon policies are for development only; use authenticated,
+-- user-scoped policies before production.
+-- =========================================================
+
+create table if not exists public.application_state (
+        id text primary key check (id = 'cashflow'),
+        state jsonb not null,
+        updated_at timestamptz not null default now()
+);
+
+alter table public.application_state enable row level security;
+
+grant select, insert, update on public.application_state to anon, authenticated;
+
+drop policy if exists "dev read application state" on public.application_state;
+create policy "dev read application state"
+on public.application_state for select
+to anon, authenticated
+using (id = 'cashflow');
+
+drop policy if exists "dev insert application state" on public.application_state;
+create policy "dev insert application state"
+on public.application_state for insert
+to anon, authenticated
+with check (id = 'cashflow');
+
+drop policy if exists "dev update application state" on public.application_state;
+create policy "dev update application state"
+on public.application_state for update
+to anon, authenticated
+using (id = 'cashflow')
+with check (id = 'cashflow');
+
+
+-- =========================================================
+-- DEVELOPMENT MASTER-DATA WRITE POLICIES
+-- Do not use these open anon policies with production data.
+-- =========================================================
+
+DO $$
+DECLARE
+    policy_row RECORD;
+    policy_name TEXT;
+BEGIN
+    FOR policy_row IN
+        SELECT * FROM (VALUES
+            ('chart_of_accounts', 'insert', 'WITH CHECK (true)'),
+            ('chart_of_accounts', 'update', 'USING (true) WITH CHECK (true)'),
+            ('chart_of_accounts', 'delete', 'USING (true)'),
+            ('departments', 'insert', 'WITH CHECK (true)'),
+            ('departments', 'update', 'USING (true) WITH CHECK (true)'),
+            ('departments', 'delete', 'USING (true)'),
+            ('categories', 'insert', 'WITH CHECK (true)'),
+            ('categories', 'update', 'USING (true) WITH CHECK (true)'),
+            ('categories', 'delete', 'USING (true)'),
+            ('cash_accounts', 'insert', 'WITH CHECK (true)'),
+            ('cash_accounts', 'update', 'USING (true) WITH CHECK (true)'),
+            ('cash_accounts', 'delete', 'USING (true)')
+        ) AS policies(table_name, command_name, clause)
+    LOOP
+        policy_name := 'cashflow_dev_anon_' || policy_row.table_name || '_' || policy_row.command_name || '_v1';
+        IF NOT EXISTS (
+            SELECT 1
+            FROM pg_policies
+            WHERE schemaname = 'public'
+                AND tablename = policy_row.table_name
+                AND policyname = policy_name
+        ) THEN
+            EXECUTE format(
+                'CREATE POLICY %I ON public.%I FOR %s TO anon %s',
+                policy_name,
+                policy_row.table_name,
+                upper(policy_row.command_name),
+                policy_row.clause
+            );
+        END IF;
+    END LOOP;
+END;
+$$;

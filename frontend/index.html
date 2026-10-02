@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=16">
+  <link rel="stylesheet" href="style.css?v=17">
 </head>
 <body>
   <div class="app-shell">
@@ -92,13 +92,13 @@
       <header class="topbar">
         <button class="menu-toggle" id="menuToggle" aria-label="Buka menu">☰</button>
         <div><span class="eyebrow">OPERATIONS CONTROL</span><h1 id="pageTitle">Dashboard</h1></div>
-        <div class="topbar-actions"><div class="notification-wrap"><button class="icon-button notification-trigger" id="notificationToggle" type="button" title="Notifikasi" aria-label="Buka notifikasi" aria-controls="notificationMenu" aria-expanded="false">🔔<span class="notification-dot" id="notificationCount" hidden></span></button><div class="notification-menu" id="notificationMenu" hidden></div></div><div class="user-chip"><span class="avatar" data-fallback="CP"><img src="fotocantya.jpg" alt="" aria-hidden="true"></span><span><strong>Cantya Puspa</strong><small>Finance</small></span></div></div>
+        <div class="topbar-actions"><div class="notification-wrap"><button class="icon-button notification-trigger" id="notificationToggle" type="button" title="Notifikasi" aria-label="Buka notifikasi" aria-controls="notificationMenu" aria-expanded="false">🔔<span class="notification-dot" id="notificationCount" hidden></span></button><div class="notification-menu" id="notificationMenu" hidden></div></div><div class="user-chip"><span class="avatar" aria-hidden="true">CP</span><span><strong>Cantya Puspa</strong><small>Finance</small></span></div></div>
       </header>
       <div id="toast" class="toast" role="status"></div>
       <div id="appView" class="page-view"></div>
     </main>
   </div>
   <div class="modal-backdrop" id="modalBackdrop" hidden><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle"><div class="modal-header"><h2 id="modalTitle">Tambah Data</h2><button class="modal-close" id="modalClose" aria-label="Tutup">×</button></div><form id="masterForm"></form></section></div>
-  <script type="module" src="js/app.js?v=19"></script>
+  <script src="app.js?v=21"></script>
 </body>
 </html>
