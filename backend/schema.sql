@@ -1,900 +1,178 @@
--- =========================================================
--- CASHFLOW - PT COVELLE TEXTILE
--- Supabase Database
--- =========================================================
+-- Covelle Textile CashFlow: four public business tables.
+-- For an existing legacy installation, run the ordered migration in
+-- migrations/20261010_four_core_backfill.sql instead of rerunning this setup.
+-- This schema contains only the four business tables used by the simplified app.
+-- The development policies preserve the project's existing public anon access;
+-- configure Supabase Auth and production RLS policies before using real data.
 
-create extension if not exists "pgcrypto";
-
-
--- =========================================================
--- 1. ROLES
--- =========================================================
-
-create table if not exists public.roles (
-    id uuid primary key default gen_random_uuid(),
-    name varchar(50) not null unique,
-    description text,
-    is_active boolean not null default true,
-    created_at timestamptz not null default now()
-);
-
-
--- =========================================================
--- 2. DEPARTMENTS
--- =========================================================
-
-create table if not exists public.departments (
-    id varchar(50) primary key,
-    code varchar(20) not null unique,
-    name varchar(100) not null unique,
-    description text,
-    is_active boolean not null default true,
-    created_at timestamptz not null default now(),
-    updated_at timestamptz not null default now()
-);
-
-
--- =========================================================
--- 3. PROFILES / USERS
--- =========================================================
-
-create table if not exists public.profiles (
-    id varchar(50) primary key,
-    role_id uuid,
-    department_id varchar(50),
-    employee_code varchar(50),
-    full_name varchar(150) not null,
-    email varchar(150),
-    is_active boolean not null default true,
-    created_at timestamptz not null default now(),
-    updated_at timestamptz not null default now(),
-
-    constraint fk_profiles_role
-        foreign key (role_id)
-        references public.roles(id),
-
-    constraint fk_profiles_department
-        foreign key (department_id)
-        references public.departments(id)
-);
-
--- Migrate profiles created with the previous varchar role_id definition.
--- Known ROLE-* seed IDs map to the stable UUIDs inserted below. Existing UUIDs
--- are preserved; unknown values fail instead of silently losing their role.
-alter table public.profiles drop constraint if exists fk_profiles_role;
-alter table public.profiles
-    alter column role_id type uuid
-    using case
-        when role_id is null or btrim(role_id::text) = '' then null
-        when btrim(role_id::text) = 'ROLE-FIN' then '00000000-0000-4000-8000-000000000001'::uuid
-        when btrim(role_id::text) = 'ROLE-SUP' then '00000000-0000-4000-8000-000000000002'::uuid
-        when btrim(role_id::text) = 'ROLE-MGR' then '00000000-0000-4000-8000-000000000003'::uuid
-        when btrim(role_id::text) = 'ROLE-ACC' then '00000000-0000-4000-8000-000000000004'::uuid
-        when btrim(role_id::text) = 'ROLE-CASH' then '00000000-0000-4000-8000-000000000005'::uuid
-        when btrim(role_id::text) = 'ROLE-FM' then '00000000-0000-4000-8000-000000000006'::uuid
-        else btrim(role_id::text)::uuid
-    end;
-
-
--- =========================================================
--- 4. CHART OF ACCOUNTS
--- =========================================================
-
-create table if not exists public.chart_of_accounts (
-    id varchar(50) primary key,
-    account_code varchar(30) not null unique,
-    account_name varchar(150) not null,
-    account_type varchar(30) not null,
-    parent_id varchar(50),
-    is_active boolean not null default true,
-    created_at timestamptz not null default now(),
-    updated_at timestamptz not null default now(),
-
-    constraint fk_coa_parent
-        foreign key (parent_id)
-        references public.chart_of_accounts(id),
-
-    constraint chk_coa_type
-        check (
-            account_type in (
-                'Asset',
-                'Liability',
-                'Equity',
-                'Revenue',
-                'Expense'
-            )
-        )
-);
-
-
--- =========================================================
--- 5. CATEGORIES
--- =========================================================
-
-create table if not exists public.categories (
-    id varchar(50) primary key,
-    code varchar(30) unique,
-    name varchar(100) not null unique,
-    category_type varchar(100),
-    account_id varchar(50),
-    is_active boolean not null default true,
-    created_at timestamptz not null default now(),
-    updated_at timestamptz not null default now(),
-
-    constraint fk_categories_account
-        foreign key (account_id)
-        references public.chart_of_accounts(id)
-);
-
-
--- =========================================================
--- 6. CASH ACCOUNTS
--- =========================================================
-
-create table if not exists public.cash_accounts (
-    id varchar(50) primary key,
-    code varchar(30) not null unique,
-    name varchar(150) not null unique,
-
-    account_type varchar(30) not null,
-
+CREATE TABLE IF NOT EXISTS public.cash_accounts (
+    id varchar(50) PRIMARY KEY,
+    code varchar(30) NOT NULL UNIQUE,
+    name varchar(150) NOT NULL UNIQUE,
+    account_type varchar(30) NOT NULL CHECK (account_type IN ('Petty Cash', 'Cash', 'Bank')),
     location varchar(150),
     custodian varchar(150),
-
-    opening_balance numeric(18,2) not null default 0,
-    minimum_balance numeric(18,2) not null default 0,
-    maximum_balance numeric(18,2) not null default 0,
-
-    is_active boolean not null default true,
-
-    coa_id varchar(50),
-
-    created_at timestamptz not null default now(),
-    updated_at timestamptz not null default now(),
-
-    constraint fk_cash_coa
-        foreign key (coa_id)
-        references public.chart_of_accounts(id),
-
-    constraint chk_cash_type
-        check (
-            account_type in (
-                'Petty Cash',
-                'Cash',
-                'Bank'
-            )
-        )
+    opening_balance numeric(18,2) NOT NULL DEFAULT 0,
+    minimum_balance numeric(18,2) NOT NULL DEFAULT 0,
+    maximum_balance numeric(18,2) NOT NULL DEFAULT 0,
+    is_active boolean NOT NULL DEFAULT true,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS public.categories (
+    id varchar(50) PRIMARY KEY,
+    code varchar(30) UNIQUE,
+    name varchar(100) NOT NULL UNIQUE,
+    category_type varchar(100),
+    is_active boolean NOT NULL DEFAULT true,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
 
--- =========================================================
--- 7. TRANSACTIONS
--- Semua transaksi aplikasi disimpan dalam satu tabel
--- =========================================================
-
-create table if not exists public.transactions (
-    id varchar(100) primary key,
-
-    type varchar(50) not null,
-
-    transaction_date date not null,
-
-    source_cash_account_id varchar(50),
-    cash_account_id varchar(50),
-
+CREATE TABLE IF NOT EXISTS public.transactions (
+    id varchar(100) PRIMARY KEY,
+    type varchar(50) NOT NULL CONSTRAINT chk_transaction_type CHECK (
+        type IN (
+            'petty-topup', 'petty-expense', 'petty-replenishment',
+            'cash-in', 'cash-out', 'cash-transfer', 'cash-request'
+        )
+    ),
+    transaction_date date NOT NULL,
+    source_cash_account_id varchar(50) REFERENCES public.cash_accounts(id) ON DELETE RESTRICT,
+    cash_account_id varchar(50) REFERENCES public.cash_accounts(id) ON DELETE RESTRICT,
     department varchar(100),
+    department_name_snapshot text,
     category varchar(100),
-
+    category_name_snapshot text,
+    category_id varchar(50) REFERENCES public.categories(id) ON DELETE RESTRICT,
     vendor varchar(150),
-
     requester varchar(150),
     required_date date,
-
-    amount numeric(18,2) not null default 0,
-
+    amount numeric(18,2) NOT NULL CONSTRAINT chk_transaction_amount CHECK (amount >= 0),
     description text,
-
-    status varchar(30) not null default 'Pending',
-
+    status varchar(30) NOT NULL DEFAULT 'Pending' CHECK (
+        status IN ('Pending', 'Approved', 'Posted', 'Rejected', 'Revision Requested', 'Submitted')
+    ),
     created_by varchar(150),
-
-    created_at timestamptz not null default now(),
-    updated_at timestamptz not null default now(),
-
-    constraint fk_transaction_source_cash
-        foreign key (source_cash_account_id)
-        references public.cash_accounts(id),
-
-    constraint fk_transaction_cash
-        foreign key (cash_account_id)
-        references public.cash_accounts(id),
-
-    constraint chk_transaction_type
-        check (
-            type in (
-                'petty-topup',
-                'petty-expense',
-                'petty-replenishment',
-                'cash-in',
-                'cash-out',
-                'cash-transfer',
-                'cash-request'
-            )
-        ),
-
-    constraint chk_transaction_status
-        check (
-            status in (
-                'Pending',
-                'Approved',
-                'Posted',
-                'Rejected',
-                'Revision Requested',
-                'Submitted'
-            )
-        ),
-
-    constraint chk_transaction_amount
-        check (amount >= 0)
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
 );
 
-
--- =========================================================
--- 8. APPROVALS
--- =========================================================
-
-create table if not exists public.approvals (
-    id uuid primary key default gen_random_uuid(),
-
-    transaction_id varchar(100) not null,
-
+CREATE TABLE IF NOT EXISTS public.approvals (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    transaction_id varchar(100) NOT NULL
+        REFERENCES public.transactions(id) ON DELETE RESTRICT,
     approver_id varchar(50),
-
-    approval_level integer not null default 1,
-
-    action varchar(30) not null default 'Pending',
-
+    approver_name_snapshot text,
+    approval_level integer NOT NULL DEFAULT 1,
+    action varchar(30) NOT NULL DEFAULT 'Pending' CHECK (
+        action IN ('Pending', 'Approved', 'Rejected', 'Revision Requested')
+    ),
     notes text,
-
     approved_at timestamptz,
-
-    created_at timestamptz not null default now(),
-
-    constraint fk_approval_transaction
-        foreign key (transaction_id)
-        references public.transactions(id)
-        on delete cascade,
-
-    constraint fk_approval_user
-        foreign key (approver_id)
-        references public.profiles(id),
-
-    constraint chk_approval_action
-        check (
-            action in (
-                'Pending',
-                'Approved',
-                'Rejected',
-                'Revision Requested'
-            )
-        )
+    idempotency_key text,
+    source_event_data jsonb,
+    created_at timestamptz NOT NULL DEFAULT now()
 );
 
-
--- =========================================================
--- 9. CASH COUNTS
--- =========================================================
-
-create table if not exists public.cash_counts (
-    id varchar(100) primary key,
-
-    count_date date not null,
-
-    cash_account_id varchar(50) not null,
-
-    cash_account_name varchar(150),
-
-    physical_cash numeric(18,2) not null default 0,
-
-    system_balance numeric(18,2) not null default 0,
-
-    difference numeric(18,2) not null default 0,
-
-    counted_by varchar(150),
-
-    count_notes text,
-
-    status varchar(30) not null,
-
-    created_at timestamptz not null default now(),
-
-    constraint fk_cash_count_account
-        foreign key (cash_account_id)
-        references public.cash_accounts(id),
-
-    constraint chk_cash_count_status
-        check (
-            status in (
-                'Balanced',
-                'Ada Selisih'
-            )
-        )
-);
-
-
--- =========================================================
--- 10. JOURNAL HEADER
--- =========================================================
-
-create table if not exists public.journal_entries (
-    id uuid primary key default gen_random_uuid(),
-
-    journal_number varchar(100) not null unique,
-
-    journal_date date not null,
-
-    reference_number varchar(100),
-
-    source_transaction varchar(100),
-
-    description text,
-
-    created_by varchar(150),
-
-    created_at timestamptz not null default now(),
-
-    constraint fk_journal_transaction
-        foreign key (source_transaction)
-        references public.transactions(id)
-);
-
-
--- =========================================================
--- 11. JOURNAL LINES
--- =========================================================
-
-create table if not exists public.journal_lines (
-    id uuid primary key default gen_random_uuid(),
-
-    journal_id uuid not null,
-
-    account_id varchar(50) not null,
-
-    description text,
-
-    debit numeric(18,2) not null default 0,
-
-    credit numeric(18,2) not null default 0,
-
-    created_at timestamptz not null default now(),
-
-    constraint fk_journal_line_header
-        foreign key (journal_id)
-        references public.journal_entries(id)
-        on delete cascade,
-
-    constraint fk_journal_line_account
-        foreign key (account_id)
-        references public.chart_of_accounts(id),
-
-    constraint chk_debit_credit
-        check (
-            debit >= 0
-            and credit >= 0
-            and not (debit > 0 and credit > 0)
-        )
-);
-
-
--- =========================================================
--- 12. APPROVAL MATRIX
--- =========================================================
-
-create table if not exists public.approval_matrix (
-    id uuid primary key default gen_random_uuid(),
-
-    minimum_amount numeric(18,2) not null default 0,
-
-    maximum_amount numeric(18,2),
-
-    role_name varchar(100) not null,
-
-    is_active boolean not null default true,
-
-    created_at timestamptz not null default now()
-);
-
-
--- =========================================================
--- 13. IMPREST SETTINGS
--- =========================================================
-
-create table if not exists public.imprest_settings (
-    id uuid primary key default gen_random_uuid(),
-
-    petty_fund numeric(18,2) not null,
-
-    minimum_balance numeric(18,2) not null,
-
-    maximum_balance numeric(18,2) not null,
-
-    replenishment_threshold numeric(18,2) not null,
-
-    is_active boolean not null default true,
-
-    created_at timestamptz not null default now(),
-
-    updated_at timestamptz not null default now()
-);
-
-
--- =========================================================
--- INDEX
--- =========================================================
-
-create index if not exists idx_transactions_date
-on public.transactions(transaction_date);
-
-create index if not exists idx_transactions_type
-on public.transactions(type);
-
-create index if not exists idx_transactions_status
-on public.transactions(status);
-
-create index if not exists idx_transactions_cash_account
-on public.transactions(cash_account_id);
-
-create index if not exists idx_transactions_department
-on public.transactions(department);
-
-create index if not exists idx_transactions_category
-on public.transactions(category);
-
-create index if not exists idx_approvals_transaction
-on public.approvals(transaction_id);
-
-create index if not exists idx_cash_counts_date
-on public.cash_counts(count_date);
-
-create index if not exists idx_journal_date
-on public.journal_entries(journal_date);
-
-create index if not exists idx_journal_source
-on public.journal_entries(source_transaction);
-
-
--- =========================================================
--- SEED ROLES
--- =========================================================
-
-insert into public.roles
-    (id, name, description)
-values
-    ('00000000-0000-4000-8000-000000000001', 'Finance', 'Finance'),
-    ('00000000-0000-4000-8000-000000000002', 'Supervisor', 'Supervisor'),
-    ('00000000-0000-4000-8000-000000000003', 'Manager', 'Manager'),
-    ('00000000-0000-4000-8000-000000000004', 'Accounting', 'Accounting'),
-    ('00000000-0000-4000-8000-000000000005', 'Cashier', 'Cashier'),
-    ('00000000-0000-4000-8000-000000000006', 'Finance Manager', 'Finance Manager')
-on conflict (id) do nothing;
-
-alter table public.profiles drop constraint if exists fk_profiles_role;
-alter table public.profiles
-    add constraint fk_profiles_role
-    foreign key (role_id)
-    references public.roles(id);
-
-
--- =========================================================
--- SEED DEPARTMENTS
--- =========================================================
-
-insert into public.departments
-    (id, code, name, description)
-values
-    ('DEP-001', 'PRD', 'Produksi', 'Rina Pratiwi'),
-    ('DEP-002', 'MTC', 'Maintenance', 'Dimas Saputra'),
-    ('DEP-003', 'WH', 'Warehouse', 'Agus Setiawan'),
-    ('DEP-004', 'QC', 'Quality Control', 'Maya Lestari'),
-    ('DEP-005', 'HGA', 'HR & GA', 'Sari Wulandari'),
-    ('DEP-006', 'FIN', 'Finance', 'Cantya Puspa'),
-    ('DEP-007', 'ACC', 'Accounting', 'Budi Hartono')
-on conflict (id) do nothing;
-
-
--- =========================================================
--- SEED COA
--- =========================================================
-
-insert into public.chart_of_accounts
-    (id, account_code, account_name, account_type, parent_id)
-values
-    ('COA-001', '1101', 'Cash', 'Asset', null),
-    ('COA-002', '1102', 'Petty Cash', 'Asset', 'COA-001'),
-    ('COA-003', '1103', 'Bank', 'Asset', 'COA-001'),
-    ('COA-005', '2101', 'Accounts Payable', 'Liability', null),
-    ('COA-006', '5101', 'Beban ATK', 'Expense', null),
-    ('COA-007', '5102', 'Beban Maintenance', 'Expense', null),
-    ('COA-008', '5103', 'Beban Transportasi', 'Expense', null),
-    ('COA-009', '5104', 'Beban Konsumsi', 'Expense', null),
-    ('COA-010', '5105', 'Beban Utility', 'Expense', null)
-on conflict (id) do nothing;
-
-
--- =========================================================
--- SEED CATEGORIES
--- =========================================================
-
-insert into public.categories
-    (id, code, name, category_type, account_id)
-values
-    ('CAT-001', 'CAT-001', 'ATK', 'Office', 'COA-006'),
-    ('CAT-002', 'CAT-002', 'Maintenance Mesin', 'Maintenance', 'COA-007'),
-    ('CAT-003', 'CAT-003', 'Sparepart', 'Maintenance', 'COA-007'),
-    ('CAT-004', 'CAT-004', 'Transportasi', 'Operational', 'COA-008'),
-    ('CAT-005', 'CAT-005', 'Konsumsi', 'Employee Welfare', 'COA-009'),
-    ('CAT-006', 'CAT-006', 'Utility', 'Facility', 'COA-010'),
-    ('CAT-007', 'CAT-007', 'Pengiriman', 'Logistics', 'COA-008')
-on conflict (id) do nothing;
-
-
--- =========================================================
--- SEED CASH ACCOUNTS
--- =========================================================
-
-insert into public.cash_accounts
-    (
-        id,
-        code,
-        name,
-        account_type,
-        location,
-        custodian,
-        opening_balance,
-        minimum_balance,
-        maximum_balance,
-        coa_id
-    )
-values
-    (
-        'CASH-001',
-        'PC-001',
-        'Petty Cash Finance',
-        'Petty Cash',
-        'Finance Room',
-        'Cantya Puspa',
-        5000000,
-        1500000,
-        5000000,
-        'COA-002'
-    ),
-    (
-        'CASH-002',
-        'CS-001',
-        'Kas Operasional Pabrik',
-        'Cash',
-        'Cashier Room',
-        'Cashier',
-        12500000,
-        3000000,
-        20000000,
-        'COA-001'
-    ),
-    (
-        'CASH-003',
-        'BNK-001',
-        'Bank Operasional',
-        'Bank',
-        'Bank Account',
-        'Finance Manager',
-        85000000,
-        0,
-        0,
-        'COA-003'
-    )
-on conflict (id) do nothing;
-
-
--- =========================================================
--- SEED USERS / PROFILES
--- =========================================================
-
-insert into public.profiles
-    (
-        id,
-        role_id,
-        department_id,
-        employee_code,
-        full_name,
-        email
-    )
-values
-    (
-        'USR-001',
-        '00000000-0000-4000-8000-000000000001',
-        'DEP-006',
-        'finance.admin@kasflow.local',
-        'Cantya Puspa',
-        'finance.admin@kasflow.local'
-    ),
-    (
-        'USR-002',
-        '00000000-0000-4000-8000-000000000002',
-        'DEP-002',
-        'dimas@kasflow.local',
-        'Dimas Saputra',
-        'dimas@kasflow.local'
-    ),
-    (
-        'USR-003',
-        '00000000-0000-4000-8000-000000000004',
-        'DEP-007',
-        'budi@kasflow.local',
-        'Budi Hartono',
-        'budi@kasflow.local'
-    ),
-    (
-        'USR-004',
-        '00000000-0000-4000-8000-000000000005',
-        'DEP-006',
-        'cashier@kasflow.local',
-        'Cashier Pabrik',
-        'cashier@kasflow.local'
-    )
-on conflict (id) do nothing;
-
-
--- =========================================================
--- SEED APPROVAL MATRIX
--- =========================================================
-
-insert into public.approval_matrix
-    (minimum_amount, maximum_amount, role_name)
-select seed.minimum_amount, seed.maximum_amount, seed.role_name
-from (values
-    (0::numeric, 500000::numeric, 'Supervisor'::varchar),
-    (500001::numeric, 5000000::numeric, 'Manager'::varchar),
-    (5000001::numeric, null::numeric, 'Finance Manager'::varchar)
-) as seed(minimum_amount, maximum_amount, role_name)
-where not exists (
-    select 1
-    from public.approval_matrix existing
-    where existing.minimum_amount is not distinct from seed.minimum_amount
-      and existing.maximum_amount is not distinct from seed.maximum_amount
-      and existing.role_name = seed.role_name
-);
-
-
--- =========================================================
--- SEED IMPREST SETTINGS
--- =========================================================
-
-insert into public.imprest_settings
-    (
-        petty_fund,
-        minimum_balance,
-        maximum_balance,
-        replenishment_threshold
-    )
-select 5000000, 1500000, 5000000, 1500000
-where not exists (select 1 from public.imprest_settings);
-
-
--- =========================================================
--- ENABLE RLS
--- =========================================================
-
-alter table public.roles enable row level security;
-alter table public.departments enable row level security;
-alter table public.profiles enable row level security;
-alter table public.chart_of_accounts enable row level security;
-alter table public.categories enable row level security;
-alter table public.cash_accounts enable row level security;
-alter table public.transactions enable row level security;
-alter table public.approvals enable row level security;
-alter table public.cash_counts enable row level security;
-alter table public.journal_entries enable row level security;
-alter table public.journal_lines enable row level security;
-alter table public.approval_matrix enable row level security;
-alter table public.imprest_settings enable row level security;
-
-
--- =========================================================
--- DEVELOPMENT POLICY
--- Untuk tahap development aplikasi.
--- Nanti sebaiknya diperketat menggunakan auth.uid().
--- =========================================================
-
-drop policy if exists "dev read roles" on public.roles;
-create policy "dev read roles"
-on public.roles for select
-to anon, authenticated
-using (true);
-
-drop policy if exists "dev read departments" on public.departments;
-create policy "dev read departments"
-on public.departments for select
-to anon, authenticated
-using (true);
-
-drop policy if exists "dev read profiles" on public.profiles;
-create policy "dev read profiles"
-on public.profiles for select
-to anon, authenticated
-using (true);
-
-drop policy if exists "dev read coa" on public.chart_of_accounts;
-create policy "dev read coa"
-on public.chart_of_accounts for select
-to anon, authenticated
-using (true);
-
-drop policy if exists "dev read categories" on public.categories;
-create policy "dev read categories"
-on public.categories for select
-to anon, authenticated
-using (true);
-
-drop policy if exists "dev read cash accounts" on public.cash_accounts;
-create policy "dev read cash accounts"
-on public.cash_accounts for select
-to anon, authenticated
-using (true);
-
-drop policy if exists "dev read transactions" on public.transactions;
-create policy "dev read transactions"
-on public.transactions for select
-to anon, authenticated
-using (true);
-
-drop policy if exists "dev insert transactions" on public.transactions;
-create policy "dev insert transactions"
-on public.transactions for insert
-to anon, authenticated
-with check (true);
-
-drop policy if exists "dev update transactions" on public.transactions;
-create policy "dev update transactions"
-on public.transactions for update
-to anon, authenticated
-using (true)
-with check (true);
-
-drop policy if exists "dev read approvals" on public.approvals;
-create policy "dev read approvals"
-on public.approvals for select
-to anon, authenticated
-using (true);
-
-drop policy if exists "dev insert approvals" on public.approvals;
-create policy "dev insert approvals"
-on public.approvals for insert
-to anon, authenticated
-with check (true);
-
-drop policy if exists "dev update approvals" on public.approvals;
-create policy "dev update approvals"
-on public.approvals for update
-to anon, authenticated
-using (true)
-with check (true);
-
-drop policy if exists "dev read cash counts" on public.cash_counts;
-create policy "dev read cash counts"
-on public.cash_counts for select
-to anon, authenticated
-using (true);
-
-drop policy if exists "dev insert cash counts" on public.cash_counts;
-create policy "dev insert cash counts"
-on public.cash_counts for insert
-to anon, authenticated
-with check (true);
-
-drop policy if exists "dev read journals" on public.journal_entries;
-create policy "dev read journals"
-on public.journal_entries for select
-to anon, authenticated
-using (true);
-
-drop policy if exists "dev read journal lines" on public.journal_lines;
-create policy "dev read journal lines"
-on public.journal_lines for select
-to anon, authenticated
-using (true);
-
-drop policy if exists "dev read approval matrix" on public.approval_matrix;
-create policy "dev read approval matrix"
-on public.approval_matrix for select
-to anon, authenticated
-using (true);
-
-drop policy if exists "dev read imprest settings" on public.imprest_settings;
-create policy "dev read imprest settings"
-on public.imprest_settings for select
-to anon, authenticated
-using (true);
-
-
--- =========================================================
--- APPLICATION STATE
--- Stores the complete CashFlow UI state used by backend/app.js.
--- These anon policies are for development only; use authenticated,
--- user-scoped policies before production.
--- =========================================================
-
-create table if not exists public.application_state (
-        id text primary key check (id = 'cashflow'),
-        state jsonb not null,
-        updated_at timestamptz not null default now()
-);
-
-alter table public.application_state enable row level security;
-
-grant select, insert, update on public.application_state to anon, authenticated;
-
-drop policy if exists "dev read application state" on public.application_state;
-create policy "dev read application state"
-on public.application_state for select
-to anon, authenticated
-using (id = 'cashflow');
-
-drop policy if exists "dev insert application state" on public.application_state;
-create policy "dev insert application state"
-on public.application_state for insert
-to anon, authenticated
-with check (id = 'cashflow');
-
-drop policy if exists "dev update application state" on public.application_state;
-create policy "dev update application state"
-on public.application_state for update
-to anon, authenticated
-using (id = 'cashflow')
-with check (id = 'cashflow');
-
-
--- =========================================================
--- DEVELOPMENT MASTER-DATA WRITE POLICIES
--- Do not use these open anon policies with production data.
--- =========================================================
-
-DO $$
+CREATE INDEX IF NOT EXISTS idx_transactions_date ON public.transactions(transaction_date);
+CREATE INDEX IF NOT EXISTS idx_transactions_type ON public.transactions(type);
+CREATE INDEX IF NOT EXISTS idx_transactions_status ON public.transactions(status);
+CREATE INDEX IF NOT EXISTS idx_transactions_cash_account ON public.transactions(cash_account_id);
+CREATE INDEX IF NOT EXISTS idx_transactions_category ON public.transactions(category_id);
+CREATE INDEX IF NOT EXISTS idx_approvals_transaction ON public.approvals(transaction_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_approvals_idempotency_key
+    ON public.approvals(idempotency_key) WHERE idempotency_key IS NOT NULL;
+CREATE OR REPLACE FUNCTION public.cashflow_enforce_approval_sod()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $function$
 DECLARE
-    policy_row RECORD;
-    policy_name TEXT;
+    transaction_owner text;
+    transaction_requester text;
+    actor_name text;
+BEGIN
+    IF NEW.action IN ('Approved', 'Rejected', 'Revision Requested') THEN
+        actor_name := NULLIF(btrim(NEW.approver_name_snapshot), '');
+        IF actor_name IS NULL THEN
+            RAISE EXCEPTION 'An approval decision requires an approver identity.';
+        END IF;
+
+        SELECT created_by, requester
+        INTO transaction_owner, transaction_requester
+        FROM public.transactions
+        WHERE id = NEW.transaction_id
+        FOR UPDATE;
+        IF NOT FOUND THEN
+            RAISE EXCEPTION 'Approval transaction % does not exist.', NEW.transaction_id;
+        END IF;
+
+        IF lower(actor_name) = lower(btrim(COALESCE(transaction_owner, '')))
+           OR lower(actor_name) = lower(btrim(COALESCE(transaction_requester, ''))) THEN
+            RAISE EXCEPTION 'Segregation of duties violation: a requester/creator cannot decide their own transaction.';
+        END IF;
+    END IF;
+    RETURN NEW;
+END;
+$function$;
+
+DROP TRIGGER IF EXISTS cashflow_enforce_approval_sod ON public.approvals;
+CREATE TRIGGER cashflow_enforce_approval_sod
+BEFORE INSERT ON public.approvals
+FOR EACH ROW EXECUTE FUNCTION public.cashflow_enforce_approval_sod();
+
+ALTER TABLE public.cash_accounts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.categories ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.transactions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.approvals ENABLE ROW LEVEL SECURITY;
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.cash_accounts, public.categories TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE ON public.transactions, public.approvals TO anon, authenticated;
+
+DO $policies$
+DECLARE
+    policy_row record;
 BEGIN
     FOR policy_row IN
         SELECT * FROM (VALUES
-            ('chart_of_accounts', 'insert', 'WITH CHECK (true)'),
-            ('chart_of_accounts', 'update', 'USING (true) WITH CHECK (true)'),
-            ('chart_of_accounts', 'delete', 'USING (true)'),
-            ('departments', 'insert', 'WITH CHECK (true)'),
-            ('departments', 'update', 'USING (true) WITH CHECK (true)'),
-            ('departments', 'delete', 'USING (true)'),
-            ('categories', 'insert', 'WITH CHECK (true)'),
-            ('categories', 'update', 'USING (true) WITH CHECK (true)'),
-            ('categories', 'delete', 'USING (true)'),
-            ('cash_accounts', 'insert', 'WITH CHECK (true)'),
-            ('cash_accounts', 'update', 'USING (true) WITH CHECK (true)'),
-            ('cash_accounts', 'delete', 'USING (true)')
-        ) AS policies(table_name, command_name, clause)
+            ('cash_accounts', 'select'),
+            ('cash_accounts', 'insert'),
+            ('cash_accounts', 'update'),
+            ('cash_accounts', 'delete'),
+            ('categories', 'select'),
+            ('categories', 'insert'),
+            ('categories', 'update'),
+            ('categories', 'delete'),
+            ('transactions', 'select'),
+            ('transactions', 'insert'),
+            ('transactions', 'update'),
+            ('approvals', 'select'),
+            ('approvals', 'insert'),
+            ('approvals', 'update')
+        ) AS policies(table_name, command_name)
     LOOP
-        policy_name := 'cashflow_dev_anon_' || policy_row.table_name || '_' || policy_row.command_name || '_v1';
         IF NOT EXISTS (
-            SELECT 1
-            FROM pg_policies
+            SELECT 1 FROM pg_policies
             WHERE schemaname = 'public'
-                AND tablename = policy_row.table_name
-                AND policyname = policy_name
+              AND tablename = policy_row.table_name
+              AND policyname = 'cashflow_dev_' || policy_row.table_name || '_' || policy_row.command_name
         ) THEN
             EXECUTE format(
-                'CREATE POLICY %I ON public.%I FOR %s TO anon %s',
-                policy_name,
+                'CREATE POLICY %I ON public.%I FOR %s TO anon, authenticated %s',
+                'cashflow_dev_' || policy_row.table_name || '_' || policy_row.command_name,
                 policy_row.table_name,
                 upper(policy_row.command_name),
-                policy_row.clause
+                CASE policy_row.command_name
+                    WHEN 'select' THEN 'USING (true)'
+                    WHEN 'insert' THEN 'WITH CHECK (true)'
+                    WHEN 'update' THEN 'USING (true) WITH CHECK (true)'
+                    WHEN 'delete' THEN 'USING (true)'
+                END
             );
         END IF;
     END LOOP;
 END;
-$$;
+$policies$;
