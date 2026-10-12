@@ -2,6 +2,17 @@
 
 Aplikasi pencatatan kas berbasis frontend statis dengan Supabase sebagai penyimpanan. Versi ringkas ini menggunakan empat tabel bisnis:
 
+## Identitas Mahasiswa
+
+- **Nama:** Cantya Puspa
+- **NIM:** 12030124140273
+- **Kelas:** G
+
+## Web Demo Aplikasi
+
+[Klik di sini untuk membuka Covelle Textile CashFlow](https://cantyapuspa3-sudo.github.io/Covelle-Textile-CashFlow/)
+
+
 - `cash_accounts` — akun kas/bank dan saldo awal.
 - `categories` — kategori transaksi.
 - `transactions` — penerimaan, pengeluaran, transfer, dan permintaan kas.
